@@ -1,0 +1,535 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3D Hücre</title>
+<style>
+  :root { --bg1: #f4f9fc; --bg2: #d6e9f5; --ink: #17324a; --muted: #5b7389; --card: #ffffffee; --line: #d3e3ee; --accent: #1f7ae0; --ok: #1e9e5a; --bad: #d64545; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--ink); background: radial-gradient(circle at 40% 40%, var(--bg1), var(--bg2)); }
+  #stage { position: fixed; inset: 0; }
+  #labels { position: fixed; inset: 0; pointer-events: none; }
+  .lbl { pointer-events: auto; cursor: pointer; background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 3px 9px; font-size: 12px; font-weight: 600; white-space: nowrap; box-shadow: 0 2px 6px #17324a22; transition: opacity .2s; }
+  .lbl.dim { opacity: .25; }
+  .lbl.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  #top { position: fixed; left: 16px; top: 16px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; max-width: calc(100% - 370px); }
+  h1 { font-size: 20px; margin: 0 4px 0 0; }
+  .seg { display: flex; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 3px; }
+  button { font: inherit; color: var(--ink); cursor: pointer; }
+  .seg button { border: 0; background: transparent; font-size: 13px; padding: 6px 12px; border-radius: 7px; }
+  .seg button.on { background: var(--accent); color: #fff; }
+  .tools { position: fixed; left: 16px; bottom: 16px; display: flex; flex-wrap: wrap; gap: 6px; max-width: calc(100% - 370px); }
+  .tools button { background: #fff; border: 1px solid var(--line); font-size: 13px; padding: 7px 12px; border-radius: 9px; }
+  .tools button.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+  #panel { position: fixed; right: 16px; top: 16px; bottom: 16px; width: 330px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; overflow: auto; backdrop-filter: blur(8px); }
+  #card h2 { margin: 0 0 6px; font-size: 19px; }
+  .where { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  #card p { margin: 0 0 8px; font-size: 14px; line-height: 1.55; }
+  #card button { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 6px 12px; }
+  #chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+  #chips button { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 4px 10px; font-size: 12px; }
+  #chips button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .note { font-size: 12px; color: var(--muted); margin-top: 14px; }
+  .ok { color: var(--ok); font-weight: 700; } .bad { color: var(--bad); font-weight: 700; }
+  #cmp { position: fixed; inset: 0; background: #17324a66; display: none; align-items: center; justify-content: center; padding: 16px; }
+  #cmp.show { display: flex; }
+  #cmp .box { background: #fff; border-radius: 14px; padding: 18px; max-width: 560px; width: 100%; max-height: 90vh; overflow: auto; }
+  #cmp h2 { margin: 0 0 10px; font-size: 18px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { padding: 7px 8px; border-bottom: 1px solid var(--line); text-align: left; }
+  th { color: var(--muted); font-weight: 600; }
+  #cmpClose { margin-top: 12px; background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 7px 14px; }
+  @media (max-width: 760px) {
+    #panel { top: auto; left: 16px; right: 16px; width: auto; height: 36vh; }
+    .tools { bottom: calc(36vh + 26px); max-width: none; right: 16px; }
+    #top { max-width: none; right: 16px; }
+  }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="labels"></div>
+
+<div id="top">
+  <h1>3D Hücre</h1>
+  <div class="seg" id="cellSeg">
+    <button data-c="hayvan" class="on">Hayvan hücresi</button>
+    <button data-c="bitki">Bitki hücresi</button>
+  </div>
+</div>
+
+<div class="tools">
+  <button id="bCut" class="on">Kesit</button>
+  <button id="bLab" class="on">Etiketler</button>
+  <button id="bExp">Parçalara ayır</button>
+  <button id="bQuiz">Quiz</button>
+  <button id="bCmp">Karşılaştır</button>
+</div>
+
+<aside id="panel">
+  <div id="card"></div>
+  <div id="chips"></div>
+  <p class="note">Boyutlar temsilidir. Gerçek bir hücrede organeller çok daha küçüktür ve sayıları çok daha fazladır.</p>
+</aside>
+
+<div id="cmp"><div class="box">
+  <h2>Bitki ve hayvan hücresi</h2>
+  <table id="cmpT"></table>
+  <button id="cmpClose">Kapat</button>
+</div></div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+
+// ---------- content (5-7. sınıf fen düzeyi) ----------
+const INFO = {
+  zar:         { name: 'Hücre zarı', desc: 'Hücreyi dıştan saran ince ve esnek örtü. Hangi maddenin hücreye girip çıkacağını seçer, bu yüzden seçici geçirgendir.' },
+  duvar:       { name: 'Hücre duvarı', desc: 'Hücre zarının dışındaki sert tabaka. Selülozdan yapılır, bitki hücresine destek ve sabit bir şekil verir.' },
+  sitoplazma:  { name: 'Sitoplazma', desc: 'Hücre zarı ile çekirdek arasını dolduran yarı akışkan sıvı. Organeller bu sıvının içinde bulunur, hücredeki birçok tepkime burada gerçekleşir.' },
+  cekirdek:    { name: 'Çekirdek', desc: 'Hücrenin yönetim merkezi. Kalıtsal bilgiyi (DNA) taşır ve hücredeki olayları yönetir. Çift katlı bir zarla çevrilidir; içindeki ince iplikler kromatindir.' },
+  cekirdekcik: { name: 'Çekirdekçik', desc: 'Çekirdeğin içindeki koyu, yoğun bölge. Ribozomların yapımında görev alır.' },
+  mitokondri:  { name: 'Mitokondri', desc: 'Besinlerdeki enerjiyi hücrenin kullanabileceği enerjiye dönüştürür (hücresel solunum). Bu yüzden "hücrenin enerji santrali" denir. İç zarı kıvrımlıdır, böylece yüzeyi artar.' },
+  ribozom:     { name: 'Ribozom', desc: 'Protein üreten en küçük organel. Zarı yoktur. Sitoplazmada serbest hâlde ya da endoplazmik retikulumun üzerinde bulunur (mavi noktalar).' },
+  er:          { name: 'Endoplazmik retikulum', desc: 'Hücrenin içinde uzanan kanallar ağı. Maddelerin hücre içinde taşınmasını sağlar. Üzerinde ribozom bulunan kısmına granüllü ER, ribozomsuz boru şeklindeki kısmına düz ER denir.' },
+  golgi:       { name: 'Golgi cisimciği', desc: 'Üst üste dizilmiş yassı keseciklerden oluşur. Hücrede üretilen maddeleri paketler ve hücre dışına salgılar.' },
+  lizozom:     { name: 'Lizozom', desc: 'İçinde sindirim enzimleri bulunan küçük kesecik. Hücreye alınan besinleri ve yıpranmış hücre parçalarını sindirir.' },
+  koful:       { name: 'Koful', desc: 'Su, besin ve atık maddeleri depolar. Bitki hücresinde büyük ve az sayıda, hayvan hücresinde küçük ve çok sayıdadır.' },
+  sentrozom:   { name: 'Sentrozom', desc: 'Hücre bölünmesinde görev alır. Birbirine dik duran iki küçük silindirden (sentriyol) oluşur.' },
+  kloroplast:  { name: 'Kloroplast', desc: 'Fotosentez yapan organel. İçindeki klorofil güneş ışığını yakalar ve bitkiye yeşil rengini verir. İçinde üst üste dizilmiş diskler (granum) bulunur.' },
+};
+// [bitki, hayvan]
+const WHERE = {
+  zar: ['Var', 'Var'], duvar: ['Var', 'Yok'], sitoplazma: ['Var', 'Var'], cekirdek: ['Var', 'Var'], cekirdekcik: ['Var', 'Var'],
+  mitokondri: ['Var', 'Var'], ribozom: ['Var', 'Var'], er: ['Var', 'Var'], golgi: ['Var', 'Var'],
+  lizozom: ['Genellikle yok', 'Var'], koful: ['Büyük, az sayıda', 'Küçük, çok sayıda'], sentrozom: ['Çoğunda yok', 'Var'], kloroplast: ['Var', 'Yok'],
+};
+const ORDER = ['duvar', 'zar', 'sitoplazma', 'cekirdek', 'cekirdekcik', 'er', 'ribozom', 'golgi', 'mitokondri', 'lizozom', 'koful', 'sentrozom', 'kloroplast'];
+const CONTAINERS = new Set(['zar', 'duvar', 'sitoplazma']);
+const NUCLEAR = new Set(['cekirdek', 'cekirdekcik']);
+
+// ---------- helpers ----------
+function mulberry32(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const rng = mulberry32(2024);
+const R = (a, b) => a + (b - a) * rng();
+const rq = () => new THREE.Quaternion().setFromEuler(new THREE.Euler(R(0, 6.28), R(0, 6.28), R(0, 6.28)));
+function randInSphere(r) { const v = new THREE.Vector3(); do v.set(R(-1, 1), R(-1, 1), R(-1, 1)); while (v.lengthSq() > 1); return v.multiplyScalar(r); }
+
+// Smooth radial wobble so membranes read as soft, living surfaces rather than perfect spheres.
+function wobble(geo, amp, freq, seed = 0) {
+  const p = geo.attributes.position, v = new THREE.Vector3(), n = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i); n.copy(v).normalize();
+    const x = v.x * freq + seed, y = v.y * freq, z = v.z * freq;
+    const s = (Math.sin(x * 1.7 + y * 0.4) * Math.sin(y * 1.3 + z * 0.8) * Math.sin(z * 1.9 + x * 0.6) + 0.5 * Math.sin(x * 2.9 - z * 2.1 + y * 1.6)) / 1.5;
+    v.addScaledVector(n, amp * s); p.setXYZ(i, v.x, v.y, v.z);
+  }
+  geo.computeVertexNormals(); return geo;
+}
+const solid = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.45, ...extra });
+const glass = (color, opacity, extra = {}) => new THREE.MeshPhysicalMaterial({ color, transparent: true, opacity, roughness: 0.25, clearcoat: 0.6, side: THREE.DoubleSide, depthWrite: false, ...extra });
+
+// Cutaway: two world-space planes whose intersection removes a quarter wedge, re-aimed at the camera every frame.
+const planes = [new THREE.Plane(new THREE.Vector3(-1, 0, 0), 0), new THREE.Plane(new THREE.Vector3(0, 0, -1), 0)];
+const clipMats = [];
+function clip(m) { m.clipIntersection = true; m.clippingPlanes = planes; clipMats.push(m); return m; }
+const wU = new THREE.Vector3(), wV = new THREE.Vector3();
+const inWedge = p => p.dot(wU) > 0 && p.dot(wV) > 0;
+
+// ---------- renderer ----------
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.localClippingEnabled = true;
+document.getElementById('stage').appendChild(renderer.domElement);
+const labelRenderer = new CSS2DRenderer({ element: document.getElementById('labels') });
+labelRenderer.setSize(innerWidth, innerHeight);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(12, 8, 15);
+// Keep the cell centred in the space the panel leaves free (right column on desktop, bottom sheet on phones).
+function frame() {
+  const w = innerWidth, h = innerHeight;
+  camera.aspect = w / h;
+  if (w > 760) camera.setViewOffset(w, h, 180, 0, w, h); else camera.setViewOffset(w, h, 0, h * 0.17, w, h);
+  camera.updateProjectionMatrix();
+}
+frame();
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.minDistance = 6; controls.maxDistance = 40;
+controls.autoRotate = true; controls.autoRotateSpeed = 0.5;
+controls.addEventListener('start', () => controls.autoRotate = false);
+scene.add(new THREE.HemisphereLight(0xffffff, 0xc9dceb, 1.7));
+const key = new THREE.DirectionalLight(0xffffff, 1.6); key.position.set(6, 9, 7); scene.add(key);
+const rim = new THREE.DirectionalLight(0xcfe6ff, 0.6); rim.position.set(-7, -3, -5); scene.add(rim);
+
+// ---------- cell framework ----------
+function newCell(type, inside) {
+  const c = { type, inside, group: new THREE.Group(), orgs: {}, occ: [], anchors: {} };
+  c.add = (k, obj) => {
+    let o = c.orgs[k];
+    if (!o) { const g = new THREE.Group(); g.userData.key = k; c.group.add(g); o = c.orgs[k] = { key: k, group: g }; }
+    o.group.add(obj); return obj;
+  };
+  c.anchor = (k, pos) => { const a = new THREE.Object3D(); a.position.copy(pos); c.add(k, a); c.anchors[k] = a; };
+  scene.add(c.group);
+  return c;
+}
+function place(c, r, ok = () => true) {
+  for (let t = 0; t < 800; t++) {
+    const p = new THREE.Vector3(R(-5, 5), R(-4, 4), R(-5, 5));
+    if (!c.inside(p, r) || !ok(p, r)) continue;
+    if (c.occ.some(o => o.p.distanceTo(p) < o.r + r + 0.08)) continue;
+    c.occ.push({ p, r }); return p;
+  }
+  return null;
+}
+
+// ---------- organelles ----------
+function nucleus(c, ctr, r) {
+  const env = new THREE.Mesh(wobble(new THREE.SphereGeometry(r, 64, 48), 0.05, 1.4, 3), clip(glass(0x8e6bd8, 0.5)));
+  env.position.copy(ctr); c.add('cekirdek', env);
+  const chrom = solid(0x6a4fc4);
+  for (let i = 0; i < 6; i++) {
+    const pts = []; for (let j = 0; j < 5; j++) pts.push(randInSphere(r * 0.7));
+    const m = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 48, 0.035, 6), chrom);
+    m.position.copy(ctr); c.add('cekirdek', m);
+  }
+  const nl = new THREE.Mesh(wobble(new THREE.SphereGeometry(r * 0.32, 32, 24), 0.03, 3), solid(0x3b1f7a, { roughness: 0.6 }));
+  nl.position.copy(ctr).add(new THREE.Vector3(r * 0.28, r * 0.18, r * 0.1)); c.add('cekirdekcik', nl);
+  c.anchor('cekirdek', ctr.clone().add(new THREE.Vector3(-r * 0.6, r * 0.85, 0)));   // off the nucleolus label
+}
+
+function er(c, ctr, radii, h, a0) {
+  const sheet = glass(0x4fc3f7, 0.85, { roughness: 0.4 }), ribo = solid(0x1d4ed8), smooth = solid(0x81d4fa);
+  const arc = Math.PI * 1.25, rg = new THREE.SphereGeometry(0.045, 6, 4), M = new THREE.Matrix4();
+  radii.forEach((Rr, i) => {
+    const st = a0 + i * 0.25;
+    // Cisternae are curved sheets concentric with the nuclear envelope, with a wavy rim.
+    const g = new THREE.CylinderGeometry(Rr, Rr, h, 96, 8, true, st, arc), p = g.attributes.position;
+    for (let k = 0; k < p.count; k++) {
+      const x = p.getX(k), y = p.getY(k), z = p.getZ(k), s = (Rr + 0.07 * Math.sin(Math.atan2(x, z) * 9 + y * 3)) / Rr;
+      p.setXYZ(k, x * s, y, z * s);
+    }
+    g.computeVertexNormals();
+    const m = new THREE.Mesh(g, sheet); m.position.copy(ctr).add(new THREE.Vector3(0, (i - 1) * 0.18, 0)); c.add('er', m);
+    const n = 70, inst = new THREE.InstancedMesh(rg, ribo, n);
+    for (let k = 0; k < n; k++) {
+      const ang = st + rng() * arc, y = R(-h / 2, h / 2), rr = Rr + 0.07 * Math.sin(ang * 9 + y * 3) + 0.06;
+      inst.setMatrixAt(k, M.makeTranslation(Math.sin(ang) * rr, y, Math.cos(ang) * rr));
+    }
+    inst.position.copy(m.position); c.add('er', inst);
+  });
+  const end = a0 + arc + 0.3, Rm = radii.at(-1) + 0.45;
+  for (let i = 0; i < 3; i++) {
+    const base = new THREE.Vector3(Math.sin(end) * Rm, R(-0.3, 0.3), Math.cos(end) * Rm), pts = [];
+    for (let j = 0; j < 5; j++) pts.push(base.clone().add(new THREE.Vector3(R(-0.5, 0.5), R(-0.4, 0.4), R(-0.5, 0.5))));
+    const m = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 40, 0.07, 6), smooth);
+    m.position.copy(ctr); c.add('er', m);
+  }
+  const mid = a0 + arc / 2 + 0.25, Ro = radii.at(-1) + 0.1;
+  c.anchor('er', ctr.clone().add(new THREE.Vector3(Math.sin(mid) * Ro, h / 2, Math.cos(mid) * Ro)));
+}
+
+function golgi(c, p, s) {
+  const g = new THREE.Group(), mat = solid(0xffb300, { side: THREE.DoubleSide, roughness: 0.35 });
+  for (let i = 0; i < 5; i++) {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(1 - Math.abs(i - 2) * 0.13, 40, 8, 0, Math.PI * 2, 0, 0.6), mat);
+    m.scale.set(1, 0.55, 1); m.position.y = i * 0.16 - 0.6; g.add(m);
+  }
+  for (let i = 0; i < 7; i++) {
+    const a = rng() * Math.PI * 2, d = R(0.9, 1.2);
+    const v = new THREE.Mesh(new THREE.SphereGeometry(R(0.07, 0.12), 12, 8), mat);
+    v.position.set(Math.cos(a) * d, R(-0.5, 0.2), Math.sin(a) * d); g.add(v);
+  }
+  g.position.copy(p); g.quaternion.copy(rq()); g.scale.setScalar(s); c.add('golgi', g);
+}
+
+function mito(c, p) {
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(new THREE.CapsuleGeometry(0.32, 0.9, 8, 20), glass(0xff8a3d, 0.55, { roughness: 0.3 })));
+  const cm = solid(0xd9541e);
+  for (let i = 0; i < 5; i++) {   // cristae: inner-membrane folds reaching in from alternate sides
+    const b = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.035, 0.34), cm);
+    b.position.set(i % 2 ? 0.08 : -0.08, -0.44 + i * 0.22, 0); g.add(b);
+  }
+  g.position.copy(p); g.quaternion.copy(rq()); c.add('mitokondri', g);
+}
+
+function lysosome(c, p) {
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(new THREE.SphereGeometry(0.26, 24, 16), glass(0xba68c8, 0.6)));
+  g.add(new THREE.Mesh(new THREE.SphereGeometry(0.14, 16, 12), solid(0x7b1fa2)));
+  g.position.copy(p); c.add('lizozom', g);
+}
+
+function vacuole(c, p, r) {
+  const m = new THREE.Mesh(wobble(new THREE.SphereGeometry(r, 32, 24), 0.03, 4), glass(0x64b5f6, 0.45));
+  m.position.copy(p); c.add('koful', m);
+}
+
+function centrosome(c, p) {
+  const g = new THREE.Group(), mat = solid(0x26a69a);
+  const centriole = () => {
+    const q = new THREE.Group();
+    for (let i = 0; i < 9; i++) {   // nine microtubule triplets in a ring
+      const a = i / 9 * Math.PI * 2, t = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.5, 8), mat);
+      t.position.set(Math.cos(a) * 0.14, 0, Math.sin(a) * 0.14); q.add(t);
+    }
+    return q;
+  };
+  const a = centriole(); a.position.x = -0.2;
+  const b = centriole(); b.rotation.x = Math.PI / 2; b.position.x = 0.2;
+  g.add(a, b); g.position.copy(p); g.quaternion.copy(rq()); c.add('sentrozom', g);
+}
+
+function chloroplast(c, p) {
+  const g = new THREE.Group();
+  const o = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 20), glass(0x66bb6a, 0.6)); o.scale.set(0.62, 0.3, 0.38); g.add(o);
+  const gm = solid(0x1b5e20), lm = solid(0x2e7d32);
+  for (let s = 0; s < 4; s++) for (let j = 0; j < 5; j++) {   // grana: stacked thylakoid discs
+    const d = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.03, 16), gm);
+    d.position.set(-0.36 + s * 0.24, -0.1 + j * 0.05, 0); g.add(d);
+  }
+  g.add(new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.012, 0.06), lm));
+  g.position.copy(p); g.quaternion.copy(rq()); c.add('kloroplast', g);
+}
+
+function ribosomes(c, n, ok, hint) {
+  const inst = new THREE.InstancedMesh(new THREE.SphereGeometry(0.05, 6, 4), solid(0x1d4ed8), n), M = new THREE.Matrix4();
+  let k = 0, best = null;
+  for (let t = 0; k < n && t < 30000; t++) {
+    const p = new THREE.Vector3(R(-5, 5), R(-4, 4), R(-5, 5));
+    if (!c.inside(p, 0.15) || !ok(p)) continue;
+    inst.setMatrixAt(k++, M.makeTranslation(p.x, p.y, p.z));
+    if (!best || p.distanceTo(hint) < best.distanceTo(hint)) best = p;   // label the dot nearest a clear spot
+  }
+  inst.count = k; c.add('ribozom', inst); c.anchor('ribozom', best);
+}
+
+// ---------- animal cell ----------
+function buildAnimal() {
+  const c = newCell('hayvan', (p, m) => (p.x / (4.65 - m)) ** 2 + (p.y / (3.8 - m)) ** 2 + (p.z / (4.65 - m)) ** 2 < 1);
+  const memGeo = wobble(new THREE.SphereGeometry(5, 96, 64), 0.12, 0.55);   // 0.18 pinched a heart-shaped cleft at the base
+  const mem = new THREE.Mesh(memGeo, clip(glass(0xff9fb8, 0.42, { clearcoat: 1 }))); mem.scale.set(1, 0.82, 1); c.add('zar', mem);
+  const cyto = new THREE.Mesh(memGeo, clip(glass(0xfff0d0, 0.12))); cyto.scale.set(0.97, 0.82 * 0.97, 0.97); c.add('sitoplazma', cyto);
+  c.anchor('zar', new THREE.Vector3(0, 4.1, 0));
+  c.anchor('sitoplazma', new THREE.Vector3(-2.6, -1.6, 2.2));
+
+  const nc = new THREE.Vector3(0.3, 0.2, -0.4);
+  nucleus(c, nc, 1.5);
+  er(c, nc, [1.85, 2.15, 2.45], 1.3, R(0, 6.28));
+  c.occ.push({ p: nc.clone(), r: 2.55 });   // 2.75 left no room anywhere for the Golgi
+
+  const gp = place(c, 0.95); if (gp) golgi(c, gp, 0.85);
+  const cp = place(c, 0.45, p => p.distanceTo(nc) < 3.8); if (cp) centrosome(c, cp);
+  for (let i = 0; i < 7; i++) { const p = place(c, 0.8); if (p) mito(c, p); }
+  for (let i = 0; i < 5; i++) { const p = place(c, 0.3); if (p) lysosome(c, p); }
+  for (let i = 0; i < 4; i++) { const r = R(0.38, 0.55), p = place(c, r); if (p) vacuole(c, p, r); }
+  ribosomes(c, 280, p => p.distanceTo(nc) > 1.75 && !c.occ.some(o => o.p.distanceTo(p) < o.r * 0.9), new THREE.Vector3(1.5, -2.6, 2.5));
+  return c;
+}
+
+// ---------- plant cell ----------
+function buildPlant() {
+  const c = newCell('bitki', (p, m) => Math.abs(p.x) < 4.35 - m && Math.abs(p.y) < 3.05 - m && Math.abs(p.z) < 3.05 - m);
+  const wall = new THREE.Mesh(new RoundedBoxGeometry(9.5, 6.9, 6.9, 4, 0.6), clip(glass(0x7cb342, 0.5, { roughness: 0.6 }))); c.add('duvar', wall);
+  const mem = new THREE.Mesh(new RoundedBoxGeometry(9.0, 6.4, 6.4, 4, 0.5), clip(glass(0xf3d76b, 0.35))); c.add('zar', mem);
+  const cyto = new THREE.Mesh(new RoundedBoxGeometry(8.85, 6.25, 6.25, 4, 0.45), clip(glass(0xf1f8e9, 0.12))); c.add('sitoplazma', cyto);
+  c.anchor('duvar', new THREE.Vector3(2.8, 3.45, -1.8));
+  c.anchor('zar', new THREE.Vector3(-1.5, 3.2, 1.8));
+  c.anchor('sitoplazma', new THREE.Vector3(-3.0, -2.2, 1.6));
+
+  // The large central vacuole pushes the nucleus and chloroplasts out toward the wall.
+  const vc = new THREE.Vector3(1.1, -0.2, 0), vs = new THREE.Vector3(2.2, 1.6, 1.6);
+  const vac = new THREE.Mesh(wobble(new THREE.SphereGeometry(1, 64, 48), 0.03, 2), clip(glass(0x90caf9, 0.35)));
+  vac.scale.copy(vs); vac.position.copy(vc); c.add('koful', vac);
+  const outsideVac = (p, r = 0) => ((p.x - vc.x) / (vs.x + r)) ** 2 + ((p.y - vc.y) / (vs.y + r)) ** 2 + ((p.z - vc.z) / (vs.z + r)) ** 2 > 1;
+
+  const nc = new THREE.Vector3(-2.9, 1.1, -0.8);
+  nucleus(c, nc, 0.95);
+  er(c, nc, [1.15, 1.35], 0.9, Math.PI / 2 - 0.3 - Math.PI * 1.25);   // arc opens toward +x so smooth ER sits inside the wall
+  c.occ.push({ p: nc.clone(), r: 1.6 });
+
+  for (let i = 0; i < 12; i++) { const p = place(c, 0.62, outsideVac); if (p) chloroplast(c, p); }
+  for (let i = 0; i < 4; i++) { const p = place(c, 0.8, outsideVac); if (p) mito(c, p); }
+  const gp = place(c, 0.75, outsideVac); if (gp) golgi(c, gp, 0.65);
+  ribosomes(c, 160, p => outsideVac(p, 0.1) && p.distanceTo(nc) > 1.05 && !c.occ.some(o => o.p.distanceTo(p) < o.r * 0.9), new THREE.Vector3(-1, -2.6, 2.6));
+  return c;
+}
+
+// ---------- finalize: materials, explode homes, labels ----------
+function finalize(c) {
+  for (const [k, o] of Object.entries(c.orgs)) {
+    o.mats = new Set();
+    o.group.traverse(m => {
+      if (!m.material) return;
+      o.mats.add(m.material);
+      m.material.userData.base ??= { opacity: m.material.opacity, transparent: m.material.transparent, depthWrite: m.material.depthWrite };
+    });
+    for (const ch of o.group.children) ch.userData.home = ch.position.clone();
+    const el = document.createElement('div'); el.className = 'lbl'; el.textContent = INFO[k].name;
+    el.addEventListener('click', e => { e.stopPropagation(); pick(k); });
+    const lab = new CSS2DObject(el); lab.center.set(0.5, 1.3);
+    (c.anchors[k] || o.group.children[0]).add(lab);
+    o.label = lab;
+  }
+  return c;
+}
+
+const cells = { hayvan: finalize(buildAnimal()), bitki: finalize(buildPlant()) };
+let cur = cells.hayvan; cells.bitki.group.visible = false;
+
+// ---------- state ----------
+let focus = null, cutOn = true, labelsOn = true, explodeT = 0, explodeE = 0;
+const quiz = { on: false, list: [], i: 0, score: 0, tried: false, msg: '' };
+const $ = id => document.getElementById(id);
+const card = $('card'), chips = $('chips');
+
+function applyCut() { for (const m of clipMats) m.clippingPlanes = cutOn ? planes : []; }
+
+function applyLook() {
+  for (const [k, o] of Object.entries(cur.orgs)) {
+    const container = CONTAINERS.has(k);
+    for (const m of o.mats) {
+      const b = m.userData.base;
+      let op = b.opacity, tr = b.transparent, dw = b.depthWrite;
+      if (container && explodeE > 0.01) { op *= 1 - 0.8 * explodeE; tr = true; dw = false; }
+      if (focus && focus !== k) { op *= 0.12; tr = true; dw = false; }
+      if (m.transparent !== tr) { m.transparent = tr; m.needsUpdate = true; }
+      m.opacity = op; m.depthWrite = dw;
+      if (focus === k) m.emissive.copy(m.color).multiplyScalar(0.35); else m.emissive.setRGB(0, 0, 0);
+    }
+    o.label.element.classList.toggle('dim', !!focus && focus !== k);
+    o.label.element.classList.toggle('on', focus === k);
+  }
+}
+
+function renderPanel() {
+  chips.style.display = quiz.on ? 'none' : '';
+  if (quiz.on) {
+    if (quiz.i >= quiz.list.length) {
+      card.innerHTML = `<h2>Quiz bitti</h2><p>${quiz.list.length} sorudan <b>${quiz.score}</b> tanesini ilk denemede buldun.</p><button id="again">Tekrar oyna</button>`;
+      $('again').onclick = startQuiz;
+    } else {
+      card.innerHTML = `<div class="where">Quiz · Soru ${quiz.i + 1}/${quiz.list.length} · Puan ${quiz.score}</div><h2>Bul: ${INFO[quiz.list[quiz.i]].name}</h2><p>${quiz.msg || 'Modelde bu parçaya tıkla. Etiketler quiz boyunca gizli.'}</p>`;
+    }
+    return;
+  }
+  if (!focus) {
+    card.innerHTML = `<h2>${cur.type === 'hayvan' ? 'Hayvan hücresi' : 'Bitki hücresi'}</h2><p>Bir organele ya da etiketine tıkla, ya da aşağıdaki listeden seç. Kesit açıkken hücrenin içini görürsün.</p>`;
+  } else {
+    const w = WHERE[focus];
+    card.innerHTML = `<h2>${INFO[focus].name}</h2><div class="where">Bitki hücresi: ${w[0]} · Hayvan hücresi: ${w[1]}</div><p>${INFO[focus].desc}</p>`;
+  }
+  chips.innerHTML = '';
+  for (const k of ORDER) if (cur.orgs[k]) {
+    const b = document.createElement('button'); b.textContent = INFO[k].name; b.className = focus === k ? 'on' : '';
+    b.onclick = () => pick(k); chips.appendChild(b);
+  }
+}
+
+function pick(k) {
+  if (quiz.on) return answer(k);
+  focus = focus === k ? null : k;
+  renderPanel();
+}
+
+function startQuiz() {
+  const pool = ORDER.filter(k => cur.orgs[k] && k !== 'sitoplazma' && k !== 'ribozom');
+  for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+  Object.assign(quiz, { on: true, list: pool.slice(0, 8), i: 0, score: 0, tried: false, msg: '' });
+  focus = null; $('bQuiz').classList.add('on'); renderPanel();
+}
+function stopQuiz() { quiz.on = false; focus = null; $('bQuiz').classList.remove('on'); renderPanel(); }
+function answer(k) {
+  if (quiz.i >= quiz.list.length || quiz.locked) return;
+  if (k === quiz.list[quiz.i]) {
+    if (!quiz.tried) quiz.score++;
+    quiz.msg = '<span class="ok">Doğru!</span>'; focus = k; quiz.locked = true; renderPanel();
+    setTimeout(() => { quiz.i++; quiz.tried = false; quiz.msg = ''; focus = null; quiz.locked = false; renderPanel(); }, 1000);
+  } else {
+    quiz.tried = true; quiz.msg = `<span class="bad">Bu ${INFO[k].name}.</span> Tekrar dene.`; renderPanel();
+  }
+}
+
+// ---------- UI wiring ----------
+for (const b of document.querySelectorAll('#cellSeg button')) b.onclick = () => {
+  document.querySelectorAll('#cellSeg button').forEach(x => x.classList.toggle('on', x === b));
+  cur.group.visible = false; cur = cells[b.dataset.c]; cur.group.visible = true;
+  focus = null; if (quiz.on) stopQuiz(); else renderPanel();
+};
+$('bCut').onclick = () => { cutOn = !cutOn; $('bCut').classList.toggle('on', cutOn); applyCut(); };
+$('bLab').onclick = () => { labelsOn = !labelsOn; $('bLab').classList.toggle('on', labelsOn); };
+$('bExp').onclick = () => { explodeT = 1 - explodeT; $('bExp').classList.toggle('on', !!explodeT); $('bExp').textContent = explodeT ? 'Birleştir' : 'Parçalara ayır'; };
+$('bQuiz').onclick = () => quiz.on ? stopQuiz() : startQuiz();
+$('bCmp').onclick = () => $('cmp').classList.add('show');
+$('cmpClose').onclick = () => $('cmp').classList.remove('show');
+$('cmpT').innerHTML = '<tr><th></th><th>Bitki hücresi</th><th>Hayvan hücresi</th></tr>' +
+  ORDER.filter(k => k !== 'cekirdekcik').map(k => `<tr><td>${INFO[k].name}</td><td>${WHERE[k][0]}</td><td>${WHERE[k][1]}</td></tr>`).join('') +
+  '<tr><td>Şekil</td><td>Köşeli, sabit</td><td>Yuvarlak, esnek</td></tr>';
+
+const ray = new THREE.Raycaster(), mouse = new THREE.Vector2();
+let downAt = null;
+renderer.domElement.addEventListener('pointerdown', e => downAt = [e.clientX, e.clientY]);
+renderer.domElement.addEventListener('pointerup', e => {
+  if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 5) return;   // a drag, not a click
+  mouse.set(e.clientX / innerWidth * 2 - 1, -e.clientY / innerHeight * 2 + 1);
+  ray.setFromCamera(mouse, camera);
+  let container = null, found = null;
+  for (const h of ray.intersectObject(cur.group, true)) {
+    let o = h.object; while (o && o.userData.key === undefined) o = o.parent;
+    if (!o) continue;
+    const k = o.userData.key;
+    // Raycasting ignores clipping, so a hit inside the removed wedge is a surface the viewer cannot see.
+    if (cutOn && h.object.material?.clippingPlanes?.length && inWedge(h.point)) continue;
+    if (CONTAINERS.has(k)) { container ??= k; continue; }
+    found = k; break;
+  }
+  const k = found || container;
+  if (k) pick(k); else if (!quiz.on && focus) { focus = null; renderPanel(); }
+});
+
+addEventListener('resize', () => {
+  frame();
+  renderer.setSize(innerWidth, innerHeight); labelRenderer.setSize(innerWidth, innerHeight);
+});
+
+if (location.hash === '#bitki') document.querySelector('#cellSeg [data-c="bitki"]').click(); else renderPanel();
+
+// ---------- loop ----------
+renderer.setAnimationLoop(() => {
+  controls.update();
+
+  const th = Math.atan2(camera.position.x, camera.position.z);
+  wU.set(Math.sin(th - Math.PI / 4), 0, Math.cos(th - Math.PI / 4));
+  wV.set(Math.sin(th + Math.PI / 4), 0, Math.cos(th + Math.PI / 4));
+  planes[0].normal.copy(wU).negate(); planes[1].normal.copy(wV).negate();
+
+  explodeE += (explodeT - explodeE) * 0.08;
+  for (const c of Object.values(cells)) for (const [k, o] of Object.entries(c.orgs)) {
+    o.label.visible = c === cur && labelsOn && !quiz.on;
+    if (CONTAINERS.has(k)) continue;
+    for (const ch of o.group.children) {
+      ch.position.copy(ch.userData.home).multiplyScalar(1 + 0.6 * explodeE);
+      if (NUCLEAR.has(k)) ch.position.y += 2.4 * explodeE;   // lift the nucleus clear of the ER that wraps it
+    }
+  }
+  applyLook();
+
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+});
+</script>
+</body>
+</html>
